@@ -10,9 +10,17 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// LevelMapper maps a [logrus.Level] to a [slog.Leveler].
+//
+// To change the default level mapping, for instance to allow mapping to custom
+// or dynamic slog levels in your application, set [SlogHook.LevelMapper]
+// to your own implementation of this function.
+type LevelMapper func(logrus.Level) slog.Leveler
+
 // SlogHook sends logs to slog.
 type SlogHook struct {
-	logger *slog.Logger
+	logger      *slog.Logger
+	LevelMapper LevelMapper
 }
 
 var _ logrus.Hook = (*SlogHook)(nil)
@@ -37,7 +45,10 @@ func NewSlogHook(logger *slog.Logger) *SlogHook {
 	}
 }
 
-func (*SlogHook) toSlogLevel(level logrus.Level) slog.Level {
+func (h *SlogHook) toSlogLevel(level logrus.Level) slog.Leveler {
+	if h.LevelMapper != nil {
+		return h.LevelMapper(level)
+	}
 	switch level {
 	case logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel:
 		return slog.LevelError
@@ -66,7 +77,7 @@ func (h *SlogHook) Fire(entry *logrus.Entry) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	lvl := h.toSlogLevel(entry.Level)
+	lvl := h.toSlogLevel(entry.Level).Level()
 	keys := make([]string, 0, len(entry.Data))
 	for k := range entry.Data {
 		keys = append(keys, k)
