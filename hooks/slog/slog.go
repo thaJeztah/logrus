@@ -5,7 +5,6 @@ package slog
 import (
 	"context"
 	"log/slog"
-	"runtime"
 	"slices"
 
 	"github.com/sirupsen/logrus"
@@ -81,6 +80,10 @@ func (h *SlogHook) Fire(entry *logrus.Entry) error {
 		ctx = context.Background()
 	}
 	lvl := h.toSlogLevel(entry.Level).Level()
+	handler := h.logger.Handler()
+	if !handler.Enabled(ctx, lvl) {
+		return nil
+	}
 	keys := make([]string, 0, len(entry.Data))
 	for k := range entry.Data {
 		keys = append(keys, k)
@@ -90,10 +93,11 @@ func (h *SlogHook) Fire(entry *logrus.Entry) error {
 	for _, k := range keys {
 		attrs = append(attrs, slog.Any(k, entry.Data[k]))
 	}
-	var pcs [1]uintptr
-	// skip 8 callers to get to the original logrus caller
-	runtime.Callers(8, pcs[:])
-	r := slog.NewRecord(entry.Time, lvl, entry.Message, pcs[0])
+	var pc uintptr
+	if entry.Caller != nil {
+		pc = entry.Caller.PC
+	}
+	r := slog.NewRecord(entry.Time, lvl, entry.Message, pc)
 	r.AddAttrs(attrs...)
-	return h.logger.Handler().Handle(ctx, r)
+	return handler.Handle(ctx, r)
 }
